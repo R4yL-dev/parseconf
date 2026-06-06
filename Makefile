@@ -1,8 +1,9 @@
-# Bibliotheque cfg : parser de configuration C++98, zero dependance.
+# cfg library: C++98 configuration parser, no dependencies.
 
-# `=` (et non `?=`) : Make predefinit CXX=g++ avec une origine `default`, et `?=`
-# n'ecrase pas une variable deja definie -> `c++` serait ignore. `=` ecrase ce
-# defaut tout en laissant la ligne de commande gagner (ex. `make CXX=clang++`).
+# `=` (not `?=`): Make predefines CXX=g++ with origin `default`, and `?=` does
+# not override an already-defined variable -> `c++` would be ignored. `=`
+# overrides that default while still letting the command line win
+# (e.g. `make CXX=clang++`).
 CXX      = c++
 CXXFLAGS = -std=c++98 -Wall -Wextra -pedantic
 INCLUDES  = -Iinc -Isrc
@@ -16,10 +17,10 @@ OBJS      = $(SRCS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
 
 TEST_SRC  = tests/test_cfg.cpp
 TEST_BIN  = test_cfg
-# g++ 13+ produit un faux positif -Wdangling-reference sur l'idiome
+# g++ 13+ emits a false-positive -Wdangling-reference on the idiom
 #   const Statement& b = getBlock(root, "name");
-# (la reference vise `root`, jamais le litteral temporaire). On le neutralise
-# pour la cible de test uniquement ; la bibliotheque compile sans aucun warning.
+# (the reference points into `root`, never into the temporary literal). We
+# silence it for the test target only; the library compiles without any warning.
 TEST_FLAGS = -Wno-dangling-reference
 
 .PHONY: all test clean

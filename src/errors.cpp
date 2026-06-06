@@ -16,7 +16,7 @@ const std::string& Error::message() const throw() { return _message; }
 ParseError::ParseError(const std::string& message, std::size_t line, std::size_t column)
     : Error(""), _line(line), _column(column) {
     std::ostringstream oss;
-    oss << "ligne " << line << ", colonne " << column << " : " << message;
+    oss << "line " << line << ", column " << column << ": " << message;
     _message = oss.str();
 }
 

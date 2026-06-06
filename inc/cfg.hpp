@@ -1,13 +1,13 @@
 #ifndef CFG_HPP
 #define CFG_HPP
 
-// En-tete parapluie : seul fichier qu'un projet consommateur a besoin d'inclure.
+// Umbrella header: the only file a consuming project needs to include.
 //
 //   #include "cfg.hpp"
 //
-// Bibliotheque de parsing du langage de configuration `cfg` (C++98, zero
-// dependance). Architecture en trois couches : lexer+parser (parseString/
-// parseFile) -> helpers (getBlock, getInt...) -> couche metier (hors lib).
+// Parsing library for the `cfg` configuration language (C++98, no dependencies).
+// Three-layer architecture: lexer+parser (parseString/parseFile) -> helpers
+// (getBlock, getInt...) -> domain layer (outside the library).
 
 #include "cfg_types.hpp"
 #include "cfg_errors.hpp"

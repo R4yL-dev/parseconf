@@ -12,8 +12,8 @@ namespace {
 
 using detail::Token;
 
-// Descente recursive sur la suite de tokens produite par le Lexer.
-// La grammaire est celle de la spec section 4.
+// Recursive descent over the token sequence produced by the Lexer.
+// The grammar is the one from spec section 4.
 class Parser {
 public:
     explicit Parser(const std::vector<Token>& tokens) : _tok(tokens), _i(0) {}
@@ -24,11 +24,11 @@ public:
         root.name = "";
         root.line = 0;
         while (cur().type != Token::END) {
-            // La racine ne contient que des blocs.
+            // The root contains blocks only.
             if (cur().type != Token::IDENT)
-                fail("attendu un nom de bloc");
+                fail("expected a block name");
             if (peekType(1) != Token::LBRACE)
-                fail("directive a la racine interdite : la racine ne contient que des blocs");
+                fail("directive at root not allowed: the root contains blocks only");
             root.children.push_back(parseBlock());
         }
         return root;
@@ -55,17 +55,17 @@ private:
     }
 
     // block := IDENT LBRACE statement* RBRACE
-    // L'appelant garantit cur()==IDENT et le token suivant ==LBRACE.
+    // The caller guarantees cur()==IDENT and the next token ==LBRACE.
     Statement parseBlock() {
         Statement blk;
         blk.kind = Statement::BLOCK;
         blk.name = cur().text;
         blk.line = cur().line;
         advance();                       // IDENT
-        advance();                       // LBRACE (deja verifie)
+        advance();                       // LBRACE (already checked)
         while (cur().type != Token::RBRACE) {
             if (cur().type == Token::END)
-                fail("accolade fermante '}' manquante (fin de fichier prematuree)");
+                fail("missing closing brace '}' (premature end of file)");
             blk.children.push_back(parseStatement());
         }
         advance();                       // RBRACE
@@ -75,7 +75,7 @@ private:
     // statement := directive | block
     Statement parseStatement() {
         if (cur().type != Token::IDENT)
-            fail("attendu un identifiant (cle de directive ou nom de bloc)");
+            fail("expected an identifier (directive key or block name)");
         if (peekType(1) == Token::LBRACE)
             return parseBlock();
         return parseDirective();
@@ -89,7 +89,7 @@ private:
         d.line = cur().line;
         advance();                       // IDENT
         d.value = parseValue();
-        expect(Token::SEMICOLON, "';' attendu en fin de directive");
+        expect(Token::SEMICOLON, "expected ';' at end of directive");
         return d;
     }
 
@@ -117,11 +117,11 @@ private:
             return s;
         }
         if (t.type == Token::IDENT)
-            fail("valeur non quotee non reconnue (attendu un nombre, une string ou un booleen)");
+            fail("unrecognized unquoted value (expected a number, a string, or a boolean)");
         if (t.type == Token::LBRACKET)
-            fail("tableaux imbriques interdits (un tableau ne contient que des scalaires)");
-        fail("valeur attendue (nombre, string ou booleen)");
-        return std::string(); // inatteignable
+            fail("nested arrays not allowed (an array contains scalars only)");
+        fail("expected a value (number, string, or boolean)");
+        return std::string(); // unreachable
     }
 
     // array := '[' ']' | '[' scalar (',' scalar)* ','? ']'
@@ -131,13 +131,13 @@ private:
         advance();                       // LBRACKET
         if (cur().type == Token::RBRACKET) {
             advance();
-            return v;                    // tableau vide
+            return v;                    // empty array
         }
         for (;;) {
             v.array.push_back(parseScalar());
             if (cur().type == Token::COMMA) {
                 advance();
-                if (cur().type == Token::RBRACKET) {  // virgule finale toleree
+                if (cur().type == Token::RBRACKET) {  // trailing comma tolerated
                     advance();
                     return v;
                 }
@@ -147,7 +147,7 @@ private:
                 advance();
                 return v;
             }
-            fail("',' ou ']' attendu dans le tableau");
+            fail("expected ',' or ']' in the array");
         }
     }
 };
@@ -164,12 +164,12 @@ Statement parseString(const std::string& source) {
 Statement parseFile(const std::string& path) {
     std::ifstream file(path.c_str(), std::ios::binary);
     if (!file)
-        throw IOError("impossible d'ouvrir le fichier : " + path);
+        throw IOError("cannot open file: " + path);
 
     std::ostringstream ss;
     ss << file.rdbuf();
     if (file.bad())
-        throw IOError("erreur de lecture du fichier : " + path);
+        throw IOError("error reading file: " + path);
 
     return parseString(ss.str());
 }

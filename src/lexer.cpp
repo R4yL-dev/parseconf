@@ -16,12 +16,12 @@ bool isIdCont(int c)  { return isIdStart(c) || isDigit(c) || c == '-'; }
 
 Lexer::Lexer(const std::string& source)
     : _src(source), _pos(0), _line(1), _col(1) {
-    // BOM UTF-8 (EF BB BF) tolere uniquement en toute premiere position.
+    // UTF-8 BOM (EF BB BF) tolerated only at the very first position.
     if (_src.size() >= 3 &&
         static_cast<unsigned char>(_src[0]) == 0xEF &&
         static_cast<unsigned char>(_src[1]) == 0xBB &&
         static_cast<unsigned char>(_src[2]) == 0xBF) {
-        _pos = 3; // la colonne reste 1 : le BOM est invisible
+        _pos = 3; // column stays 1: the BOM is invisible
     }
 }
 
@@ -44,7 +44,7 @@ void Lexer::advance() {
 }
 
 void Lexer::consumeNewline() {
-    // \r\n compte pour une seule ligne ; \r seul et \n seul aussi.
+    // \r\n counts as a single line; lone \r and lone \n too.
     if (peek() == '\r') {
         ++_pos;
         if (peek() == '\n') ++_pos;
@@ -63,10 +63,10 @@ void Lexer::skipTrivia() {
         } else if (c == '\n' || c == '\r') {
             consumeNewline();
         } else if (c == '#') {
-            // commentaire shell jusqu'a la fin de ligne (newline non consomme)
+            // shell comment to end of line (the newline is not consumed)
             while (!eof() && peek() != '\n' && peek() != '\r') advance();
         } else if (c == '/' && peekAt(1) == '/') {
-            // commentaire C++ jusqu'a la fin de ligne
+            // C++ comment to end of line
             while (!eof() && peek() != '\n' && peek() != '\r') advance();
         } else {
             return;
@@ -76,17 +76,17 @@ void Lexer::skipTrivia() {
 
 Token Lexer::lexIdent() {
     std::size_t l = _line, c = _col, start = _pos;
-    advance(); // id-start, deja valide par l'appelant
+    advance(); // id-start, already validated by the caller
     while (isIdCont(peek())) advance();
     return Token(Token::IDENT, _src.substr(start, _pos - start), l, c);
 }
 
 Token Lexer::lexNumber() {
     std::size_t l = _line, c = _col, start = _pos;
-    if (peek() == '-') advance(); // l'appelant garantit qu'un chiffre suit
+    if (peek() == '-') advance(); // the caller guarantees a digit follows
     while (isDigit(peek())) advance();
-    // partie decimale : un point suivi d'AU MOINS un chiffre. Sinon le '.'
-    // n'est pas avale (maximal munch) et deviendra un caractere inattendu.
+    // Decimal part: a dot followed by AT LEAST one digit. Otherwise the dot is
+    // not consumed (maximal munch) and becomes an unexpected character.
     if (peek() == '.' && isDigit(peekAt(1))) {
         advance(); // '.'
         while (isDigit(peek())) advance();
@@ -96,11 +96,11 @@ Token Lexer::lexNumber() {
 
 Token Lexer::lexString() {
     std::size_t openLine = _line, openCol = _col;
-    advance(); // guillemet ouvrant
+    advance(); // opening quote
     std::string out;
     for (;;) {
         if (eof())
-            failAt("string non fermee (guillemet fermant manquant)", openLine, openCol);
+            failAt("unterminated string (missing closing quote)", openLine, openCol);
         int c = peek();
         if (c == '"') {
             advance();
@@ -110,7 +110,7 @@ Token Lexer::lexString() {
             std::size_t escLine = _line, escCol = _col;
             advance(); // backslash
             if (eof())
-                failAt("string non fermee (guillemet fermant manquant)", openLine, openCol);
+                failAt("unterminated string (missing closing quote)", openLine, openCol);
             int e = peek();
             switch (e) {
                 case '"':  out += '"';  break;
@@ -118,17 +118,17 @@ Token Lexer::lexString() {
                 case 'n':  out += '\n'; break;
                 case 't':  out += '\t'; break;
                 default:
-                    failAt("sequence d'echappement invalide dans une string", escLine, escCol);
+                    failAt("invalid escape sequence in string", escLine, escCol);
             }
             advance();
             continue;
         }
         if (c < 0x20) {
-            // octet de controle brut (saut de ligne, tabulation litterale, NUL...)
-            // -> erreur : garantit qu'une string non fermee est vue en fin de ligne.
-            fail("octet de controle interdit dans une string");
+            // Raw control byte (newline, literal tab, NUL...) -> error: this
+            // guarantees an unterminated string is caught at end of line.
+            fail("control byte not allowed in a string");
         }
-        // octet >= 0x20, y compris UTF-8 multi-octets : transparent.
+        // byte >= 0x20, including multi-byte UTF-8: transparent.
         out += static_cast<char>(c);
         advance();
     }
@@ -157,7 +157,7 @@ std::vector<Token> Lexer::tokenize() {
             if (isDigit(peekAt(1)))
                 tokens.push_back(lexNumber());
             else
-                fail("'-' n'est pas suivi d'un chiffre");
+                fail("'-' is not followed by a digit");
         } else if (c == '"') {
             tokens.push_back(lexString());
         } else if (c == '{') {
@@ -173,10 +173,10 @@ std::vector<Token> Lexer::tokenize() {
         } else if (c == ',') {
             advance(); tokens.push_back(Token(Token::COMMA,     ",", l, col));
         } else if (c == '/') {
-            // un '/' seul n'est pas un token (// est traite comme trivia)
-            fail("'/' seul n'est pas valide (commentaire = //)");
+            // a lone '/' is not a token (// is handled as trivia)
+            fail("lone '/' is not valid (comment is //)");
         } else {
-            fail("caractere inattendu");
+            fail("unexpected character");
         }
         skipTrivia();
     }

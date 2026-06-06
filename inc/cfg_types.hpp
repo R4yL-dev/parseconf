@@ -7,31 +7,31 @@
 
 namespace cfg {
 
-// Valeur d'une directive : soit un scalaire, soit un tableau de scalaires.
-// Toutes les valeurs sont stockees en std::string (voir spec 5.5) : la
-// distinction NUMBER / STRING / BOOL n'est pas conservee dans l'arbre.
+// Value of a directive: either a scalar or an array of scalars.
+// All values are stored as std::string (see spec 5.5): the NUMBER / STRING /
+// BOOL distinction is not preserved in the tree.
 struct Value {
     enum Type { SCALAR, ARRAY };
 
     Type                     type;
-    std::string              scalar; // valide si type == SCALAR
-    std::vector<std::string> array;  // valide si type == ARRAY
+    std::string              scalar; // valid if type == SCALAR
+    std::vector<std::string> array;  // valid if type == ARRAY
 
     Value() : type(SCALAR) {}
 };
 
-// Noeud unique et recursif de l'arbre : soit une directive, soit un bloc.
-// Preserve l'ordre d'apparition exact (directives et blocs entrelaces).
+// Single recursive tree node: either a directive or a block.
+// Keeps the exact order of appearance (directives and blocks interleaved).
 struct Statement {
     enum Kind { DIRECTIVE, BLOCK };
 
     Kind                   kind;
 
-    std::string            name;     // cle (DIRECTIVE) ou nom du bloc (BLOCK)
-    Value                  value;    // valide si kind == DIRECTIVE
-    std::vector<Statement> children; // valide si kind == BLOCK (corps du bloc)
+    std::string            name;     // key (DIRECTIVE) or block name (BLOCK)
+    Value                  value;    // valid if kind == DIRECTIVE
+    std::vector<Statement> children; // valid if kind == BLOCK (block body)
 
-    std::size_t            line;     // ligne (1-based) du `name` ; 0 pour la racine
+    std::size_t            line;     // 1-based line of `name`; 0 for the root
 
     Statement() : kind(DIRECTIVE), line(0) {}
 };

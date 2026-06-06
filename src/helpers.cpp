@@ -10,15 +10,15 @@ namespace cfg {
 
 namespace {
 
-// Construit un suffixe " (ligne L)" pour les messages d'erreur.
+// Builds a " (line L)" suffix for error messages.
 std::string atLine(std::size_t line) {
     std::ostringstream oss;
-    oss << " (ligne " << line << ")";
+    oss << " (line " << line << ")";
     return oss.str();
 }
 
-// Renvoie l'UNIQUE directive nommee `key`, NULL si aucune.
-// Leve AccessError si la cle apparait plus d'une fois.
+// Returns the UNIQUE directive named `key`, NULL if none.
+// Throws AccessError if the key appears more than once.
 const Statement* uniqueDirective(const Statement& node, const std::string& key) {
     const Statement* found = 0;
     std::size_t count = 0;
@@ -30,28 +30,28 @@ const Statement* uniqueDirective(const Statement& node, const std::string& key) 
         }
     }
     if (count > 1)
-        throw AccessError("cle '" + key + "' presente plusieurs fois : utiliser getStrings");
+        throw AccessError("key '" + key + "' present more than once: use getStrings");
     return (count == 1) ? found : 0;
 }
 
-// Renvoie la valeur scalaire de `d`. Leve si c'est un tableau.
+// Returns the scalar value of `d`. Throws if it is an array.
 const std::string& scalarOf(const Statement& d, const std::string& key) {
     if (d.value.type == Value::ARRAY)
-        throw AccessError("cle '" + key + "' : valeur tableau, un scalaire est attendu" + atLine(d.line));
+        throw AccessError("key '" + key + "': array value, a scalar is expected" + atLine(d.line));
     return d.value.scalar;
 }
 
-// Erreur de conversion homogene : cle, valeur fautive, ligne.
+// Uniform conversion error: key, offending value, line.
 AccessError conversionError(const std::string& key, const std::string& value,
                             std::size_t line, const std::string& target) {
-    return AccessError("cle '" + key + "' : impossible de convertir \"" + value +
-                       "\" en " + target + atLine(line));
+    return AccessError("key '" + key + "': cannot convert \"" + value +
+                       "\" to " + target + atLine(line));
 }
 
 } // namespace
 
 
-// ---- Navigation dans les blocs ----
+// ---- Block navigation ----
 
 const Statement& getBlock(const Statement& node, const std::string& name) {
     const Statement* found = 0;
@@ -64,9 +64,9 @@ const Statement& getBlock(const Statement& node, const std::string& name) {
         }
     }
     if (count == 0)
-        throw AccessError("bloc '" + name + "' absent");
+        throw AccessError("block '" + name + "' missing");
     if (count > 1)
-        throw AccessError("bloc '" + name + "' present plusieurs fois (ambiguite)");
+        throw AccessError("block '" + name + "' present more than once (ambiguous)");
     return *found;
 }
 
@@ -90,7 +90,7 @@ bool hasBlock(const Statement& node, const std::string& name) {
 }
 
 
-// ---- Conversions internes ----
+// ---- Internal conversions ----
 
 namespace {
 
@@ -98,11 +98,11 @@ int toInt(const std::string& key, const std::string& s, std::size_t line) {
     errno = 0;
     const char* begin = s.c_str();
     char* end = 0;
-    long v = std::strtol(begin, &end, 10); // base 10 stricte
+    long v = std::strtol(begin, &end, 10); // strict base 10
     if (end == begin || *end != '\0')
-        throw conversionError(key, s, line, "entier");
+        throw conversionError(key, s, line, "integer");
     if (errno == ERANGE || v < static_cast<long>(INT_MIN) || v > static_cast<long>(INT_MAX))
-        throw conversionError(key, s, line, "entier (depassement de capacite)");
+        throw conversionError(key, s, line, "integer (out of range)");
     return static_cast<int>(v);
 }
 
@@ -112,49 +112,49 @@ double toFloat(const std::string& key, const std::string& s, std::size_t line) {
     char* end = 0;
     double v = std::strtod(begin, &end);
     if (end == begin || *end != '\0')
-        throw conversionError(key, s, line, "flottant");
+        throw conversionError(key, s, line, "float");
     if (errno == ERANGE)
-        throw conversionError(key, s, line, "flottant (depassement de capacite)");
+        throw conversionError(key, s, line, "float (out of range)");
     return v;
 }
 
 bool toBool(const std::string& key, const std::string& s, std::size_t line) {
     if (s == "true" || s == "1") return true;
     if (s == "false" || s == "0") return false;
-    throw conversionError(key, s, line, "booleen");
+    throw conversionError(key, s, line, "boolean");
 }
 
 } // namespace
 
 
-// ---- Valeurs scalaires : version REQUISE ----
+// ---- Scalar values: REQUIRED variant ----
 
 std::string getString(const Statement& node, const std::string& key) {
     const Statement* d = uniqueDirective(node, key);
-    if (!d) throw AccessError("cle '" + key + "' absente");
+    if (!d) throw AccessError("key '" + key + "' missing");
     return scalarOf(*d, key);
 }
 
 int getInt(const Statement& node, const std::string& key) {
     const Statement* d = uniqueDirective(node, key);
-    if (!d) throw AccessError("cle '" + key + "' absente");
+    if (!d) throw AccessError("key '" + key + "' missing");
     return toInt(key, scalarOf(*d, key), d->line);
 }
 
 double getFloat(const Statement& node, const std::string& key) {
     const Statement* d = uniqueDirective(node, key);
-    if (!d) throw AccessError("cle '" + key + "' absente");
+    if (!d) throw AccessError("key '" + key + "' missing");
     return toFloat(key, scalarOf(*d, key), d->line);
 }
 
 bool getBool(const Statement& node, const std::string& key) {
     const Statement* d = uniqueDirective(node, key);
-    if (!d) throw AccessError("cle '" + key + "' absente");
+    if (!d) throw AccessError("key '" + key + "' missing");
     return toBool(key, scalarOf(*d, key), d->line);
 }
 
 
-// ---- Valeurs scalaires : version OPTIONNELLE ----
+// ---- Scalar values: OPTIONAL variant ----
 
 std::string getString(const Statement& node, const std::string& key, const std::string& def) {
     const Statement* d = uniqueDirective(node, key);
@@ -181,7 +181,7 @@ bool getBool(const Statement& node, const std::string& key, bool def) {
 }
 
 
-// ---- Valeurs multiples ----
+// ---- Multiple values ----
 
 std::vector<std::string> getStrings(const Statement& node, const std::string& key) {
     std::vector<std::string> out;
@@ -191,7 +191,7 @@ std::vector<std::string> getStrings(const Statement& node, const std::string& ke
             continue;
         if (c.value.type == Value::SCALAR) {
             out.push_back(c.value.scalar);
-        } else { // ARRAY : aplatissement
+        } else { // ARRAY: flatten
             for (std::size_t j = 0; j < c.value.array.size(); ++j)
                 out.push_back(c.value.array[j]);
         }

@@ -7,22 +7,22 @@
 
 namespace cfg {
 
-// ---- Navigation dans les blocs ----
+// ---- Block navigation ----
 
-// Renvoie l'UNIQUE sous-bloc nomme `name`.
-// Leve AccessError s'il y en a zero, ou s'il y en a plus d'un (ambiguite).
+// Returns the UNIQUE sub-block named `name`.
+// Throws AccessError if there are zero, or more than one (ambiguity).
 const Statement& getBlock(const Statement& node, const std::string& name);
 
-// Renvoie tous les sous-blocs nommes `name`, dans l'ordre. Vecteur vide si aucun.
-// Ne leve pas. Les pointeurs visent l'interieur de l'arbre : valides tant que
-// l'arbre racine est vivant.
+// Returns every sub-block named `name`, in order. Empty vector if none.
+// Does not throw. The pointers refer into the tree: valid as long as the root
+// tree is alive.
 std::vector<const Statement*> getBlocks(const Statement& node, const std::string& name);
 
-// true s'il existe au moins un sous-bloc nomme `name`.
+// true if at least one sub-block named `name` exists.
 bool hasBlock(const Statement& node, const std::string& name);
 
 
-// ---- Valeurs scalaires : version REQUISE (leve si absente) ----
+// ---- Scalar values: REQUIRED variant (throws if absent) ----
 
 std::string getString(const Statement& node, const std::string& key);
 int         getInt   (const Statement& node, const std::string& key);
@@ -30,7 +30,7 @@ double      getFloat (const Statement& node, const std::string& key);
 bool        getBool  (const Statement& node, const std::string& key);
 
 
-// ---- Valeurs scalaires : version OPTIONNELLE (valeur par defaut si absente) ----
+// ---- Scalar values: OPTIONAL variant (default value if absent) ----
 
 std::string getString(const Statement& node, const std::string& key, const std::string& def);
 int         getInt   (const Statement& node, const std::string& key, int def);
@@ -38,13 +38,13 @@ double      getFloat (const Statement& node, const std::string& key, double def)
 bool        getBool  (const Statement& node, const std::string& key, bool def);
 
 
-// ---- Valeurs multiples ----
+// ---- Multiple values ----
 
-// Rassemble toutes les valeurs associees a `key`, dans l'ordre du fichier
-// (scalaires + elements de tableaux aplatis). Vecteur vide si absente. Ne leve pas.
+// Collects every value associated with `key`, in file order (scalars + flattened
+// array elements). Empty vector if absent. Does not throw.
 std::vector<std::string> getStrings(const Statement& node, const std::string& key);
 
-// true s'il existe au moins une directive nommee `key`.
+// true if at least one directive named `key` exists.
 bool hasKey(const Statement& node, const std::string& key);
 
 } // namespace cfg

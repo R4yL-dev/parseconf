@@ -7,25 +7,25 @@
 namespace cfg {
 namespace detail {
 
-// Unite lexicale produite par le Lexer et consommee par le Parser.
+// Lexical unit produced by the Lexer and consumed by the Parser.
 struct Token {
     enum Type {
-        IDENT,      // [a-zA-Z_][a-zA-Z0-9_-]*  (inclut true/false)
-        NUMBER,     // [-]?[0-9]+([.][0-9]+)?   (lexeme brut)
-        STRING,     // "..."                    (text = valeur DECODEE)
+        IDENT,      // [a-zA-Z_][a-zA-Z0-9_-]*  (includes true/false)
+        NUMBER,     // [-]?[0-9]+([.][0-9]+)?   (raw lexeme)
+        STRING,     // "..."                    (text = DECODED value)
         LBRACE,     // {
         RBRACE,     // }
         LBRACKET,   // [
         RBRACKET,   // ]
         SEMICOLON,  // ;
         COMMA,      // ,
-        END         // fin de fichier (token synthetique)
+        END         // end of file (synthetic token)
     };
 
     Type        type;
-    std::string text;    // lexeme (IDENT/NUMBER) ou valeur decodee (STRING)
-    std::size_t line;    // 1-based, premier octet du token
-    std::size_t column;  // 1-based en octets, premier octet du token
+    std::string text;    // lexeme (IDENT/NUMBER) or decoded value (STRING)
+    std::size_t line;    // 1-based, first byte of the token
+    std::size_t column;  // 1-based in bytes, first byte of the token
 
     Token() : type(END), line(0), column(0) {}
     Token(Type t, const std::string& s, std::size_t l, std::size_t c)
