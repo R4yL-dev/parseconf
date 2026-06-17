@@ -5,7 +5,11 @@
 # overrides that default while still letting the command line win
 # (e.g. `make CXX=clang++`).
 CXX      = c++
-CXXFLAGS = -std=c++98 -Wall -Wextra -pedantic
+# -MMD -MP: emit a .d per object listing the headers it includes (-MP adds
+# phony targets for those headers so removing one doesn't break the build).
+# Without this, editing a header (lexer.hpp, cfg_helpers.hpp, ...) leaves the
+# .o untouched and ships a stale libcfg.a.
+CXXFLAGS = -std=c++98 -Wall -Wextra -pedantic -MMD -MP
 INCLUDES  = -Iinc -Isrc
 
 LIB       = libcfg.a
@@ -40,3 +44,8 @@ test: $(LIB) $(TEST_SRC)
 
 clean:
 	rm -rf $(OBJDIR) $(LIB) $(TEST_BIN)
+
+# Pull in the generated header-dependency rules (absent on the first build, so
+# the leading '-' silences the "no such file" warning). The .d files live in
+# $(OBJDIR), so `clean` already removes them.
+-include $(OBJS:.o=.d)
