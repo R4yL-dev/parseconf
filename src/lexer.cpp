@@ -6,11 +6,13 @@ namespace detail {
 
 namespace {
 
-bool isDigit(int c)   { return c >= '0' && c <= '9'; }
-bool isIdStart(int c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+// A WORD ends at any of these bytes (and at end of input). Everything else,
+// including '/', '-', '.', '+', ':', is ordinary word content.
+bool isDelim(int c) {
+    return c == -1 || c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+           c == '{' || c == '}' || c == '[' || c == ']' ||
+           c == ';' || c == ',' || c == '"' || c == '#';
 }
-bool isIdCont(int c)  { return isIdStart(c) || isDigit(c) || c == '-'; }
 
 } // namespace
 
@@ -65,33 +67,20 @@ void Lexer::skipTrivia() {
         } else if (c == '#') {
             // shell comment to end of line (the newline is not consumed)
             while (!eof() && peek() != '\n' && peek() != '\r') advance();
-        } else if (c == '/' && peekAt(1) == '/') {
-            // C++ comment to end of line
-            while (!eof() && peek() != '\n' && peek() != '\r') advance();
         } else {
             return;
         }
     }
 }
 
-Token Lexer::lexIdent() {
+Token Lexer::lexWord() {
     std::size_t l = _line, c = _col, start = _pos;
-    advance(); // id-start, already validated by the caller
-    while (isIdCont(peek())) advance();
-    return Token(Token::IDENT, _src.substr(start, _pos - start), l, c);
-}
-
-Token Lexer::lexNumber() {
-    std::size_t l = _line, c = _col, start = _pos;
-    if (peek() == '-') advance(); // the caller guarantees a digit follows
-    while (isDigit(peek())) advance();
-    // Decimal part: a dot followed by AT LEAST one digit. Otherwise the dot is
-    // not consumed (maximal munch) and becomes an unexpected character.
-    if (peek() == '.' && isDigit(peekAt(1))) {
-        advance(); // '.'
-        while (isDigit(peek())) advance();
+    while (!isDelim(peek())) {
+        if (peek() < 0x20)            // NUL or other raw control byte
+            fail("control byte not allowed in a value");
+        advance();
     }
-    return Token(Token::NUMBER, _src.substr(start, _pos - start), l, c);
+    return Token(Token::WORD, _src.substr(start, _pos - start), l, c);
 }
 
 Token Lexer::lexString() {
@@ -149,16 +138,7 @@ std::vector<Token> Lexer::tokenize() {
         int c = peek();
         std::size_t l = _line, col = _col;
 
-        if (isIdStart(c)) {
-            tokens.push_back(lexIdent());
-        } else if (isDigit(c)) {
-            tokens.push_back(lexNumber());
-        } else if (c == '-') {
-            if (isDigit(peekAt(1)))
-                tokens.push_back(lexNumber());
-            else
-                fail("'-' is not followed by a digit");
-        } else if (c == '"') {
+        if (c == '"') {
             tokens.push_back(lexString());
         } else if (c == '{') {
             advance(); tokens.push_back(Token(Token::LBRACE,   "{", l, col));
@@ -172,11 +152,10 @@ std::vector<Token> Lexer::tokenize() {
             advance(); tokens.push_back(Token(Token::SEMICOLON, ";", l, col));
         } else if (c == ',') {
             advance(); tokens.push_back(Token(Token::COMMA,     ",", l, col));
-        } else if (c == '/') {
-            // a lone '/' is not a token (// is handled as trivia)
-            fail("lone '/' is not valid (comment is //)");
         } else {
-            fail("unexpected character");
+            // Any other byte starts an unquoted word (raw control bytes are
+            // rejected inside lexWord).
+            tokens.push_back(lexWord());
         }
         skipTrivia();
     }

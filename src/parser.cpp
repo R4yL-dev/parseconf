@@ -12,6 +12,22 @@ namespace {
 
 using detail::Token;
 
+// A KEY (directive key or block name) must keep identifier shape, even though
+// values may be arbitrary words.  [a-zA-Z_][a-zA-Z0-9_-]*
+bool isIdentifier(const std::string& s) {
+    if (s.empty()) return false;
+    char c = s[0];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'))
+        return false;
+    for (std::size_t i = 1; i < s.size(); ++i) {
+        c = s[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-'))
+            return false;
+    }
+    return true;
+}
+
 // Recursive descent over the token sequence produced by the Lexer.
 // The grammar is the one from spec section 4.
 class Parser {
@@ -25,7 +41,7 @@ public:
         root.line = 0;
         while (cur().type != Token::END) {
             // The root contains blocks only.
-            if (cur().type != Token::IDENT)
+            if (cur().type != Token::WORD || !isIdentifier(cur().text))
                 fail("expected a block name");
             if (peekType(1) != Token::LBRACE)
                 fail("directive at root not allowed: the root contains blocks only");
@@ -54,14 +70,14 @@ private:
         advance();
     }
 
-    // block := IDENT LBRACE statement* RBRACE
-    // The caller guarantees cur()==IDENT and the next token ==LBRACE.
+    // block := KEY LBRACE statement* RBRACE
+    // The caller guarantees cur() is an identifier WORD and next token ==LBRACE.
     Statement parseBlock() {
         Statement blk;
         blk.kind = Statement::BLOCK;
         blk.name = cur().text;
         blk.line = cur().line;
-        advance();                       // IDENT
+        advance();                       // KEY
         advance();                       // LBRACE (already checked)
         while (cur().type != Token::RBRACE) {
             if (cur().type == Token::END)
@@ -74,20 +90,20 @@ private:
 
     // statement := directive | block
     Statement parseStatement() {
-        if (cur().type != Token::IDENT)
+        if (cur().type != Token::WORD || !isIdentifier(cur().text))
             fail("expected an identifier (directive key or block name)");
         if (peekType(1) == Token::LBRACE)
             return parseBlock();
         return parseDirective();
     }
 
-    // directive := IDENT value SEMICOLON
+    // directive := KEY value SEMICOLON
     Statement parseDirective() {
         Statement d;
         d.kind = Statement::DIRECTIVE;
         d.name = cur().text;
         d.line = cur().line;
-        advance();                       // IDENT
+        advance();                       // KEY
         d.value = parseValue();
         expect(Token::SEMICOLON, "expected ';' at end of directive");
         return d;
@@ -103,24 +119,17 @@ private:
         return v;
     }
 
-    // scalar := NUMBER | STRING | BOOL
+    // scalar := WORD | STRING
     std::string parseScalar() {
         const Token& t = cur();
-        if (t.type == Token::NUMBER || t.type == Token::STRING) {
+        if (t.type == Token::WORD || t.type == Token::STRING) {
             std::string s = t.text;
             advance();
             return s;
         }
-        if (t.type == Token::IDENT && (t.text == "true" || t.text == "false")) {
-            std::string s = t.text;
-            advance();
-            return s;
-        }
-        if (t.type == Token::IDENT)
-            fail("unrecognized unquoted value (expected a number, a string, or a boolean)");
         if (t.type == Token::LBRACKET)
             fail("nested arrays not allowed (an array contains scalars only)");
-        fail("expected a value (number, string, or boolean)");
+        fail("expected a value (a word or a quoted string)");
         return std::string(); // unreachable
     }
 

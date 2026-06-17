@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <climits>
 #include <cerrno>
+#include <limits>
+#include <cstring>
 
 namespace cfg {
 
@@ -46,6 +48,37 @@ AccessError conversionError(const std::string& key, const std::string& value,
                             std::size_t line, const std::string& target) {
     return AccessError("key '" + key + "': cannot convert \"" + value +
                        "\" to " + target + atLine(line));
+}
+
+struct Unit { const char* suffix; unsigned long factor; };
+const Unit kDurationUnits[] = {
+    {"ms",1UL},{"s",1000UL},{"m",60000UL},{"h",3600000UL},{"d",86400000UL} };
+const Unit kSizeUnits[] = {
+    {"K",1024UL},{"M",1048576UL},{"G",1073741824UL} };
+
+// Parses "<digits><suffix>" -> magnitude*factor (unsigned long), bounded by max.
+// Strict: first byte must be a digit (no sign, no space); suffix mandatory and
+// an exact whole-suffix match against the table; overflow detected.
+unsigned long parseScaledRaw(const std::string& key, const std::string& s,
+        std::size_t line, const char* target,
+        const Unit* table, std::size_t n, unsigned long maxAllowed) {
+    if (s.empty() || s[0] < '0' || s[0] > '9')
+        throw conversionError(key, s, line, target);
+    errno = 0;
+    const char* begin = s.c_str(); char* end = 0;
+    unsigned long mag = std::strtoul(begin, &end, 10);
+    if (end == begin || errno == ERANGE)
+        throw conversionError(key, s, line, std::string(target) + " (out of range)");
+    if (*end == '\0')
+        throw conversionError(key, s, line, std::string(target) + " (missing unit suffix)");
+    for (std::size_t i = 0; i < n; ++i)
+        if (std::strcmp(end, table[i].suffix) == 0) {
+            unsigned long f = table[i].factor;
+            if (mag != 0 && mag > maxAllowed / f)
+                throw conversionError(key, s, line, std::string(target) + " (out of range)");
+            return mag * f;
+        }
+    throw conversionError(key, s, line, std::string(target) + " (unknown unit)");
 }
 
 } // namespace
@@ -206,6 +239,34 @@ bool hasKey(const Statement& node, const std::string& key) {
             return true;
     }
     return false;
+}
+
+
+// ---- Typed quantities: duration (ms) and size (bytes) ----
+
+long getDuration(const Statement& n, const std::string& k) {
+    const Statement* d = uniqueDirective(n, k);
+    if (!d) throw AccessError("key '" + k + "' missing");
+    return static_cast<long>(parseScaledRaw(k, scalarOf(*d, k), d->line, "duration",
+        kDurationUnits, 5, static_cast<unsigned long>(LONG_MAX)));
+}
+long getDuration(const Statement& n, const std::string& k, long def) {
+    const Statement* d = uniqueDirective(n, k);
+    if (!d) return def;
+    return static_cast<long>(parseScaledRaw(k, scalarOf(*d, k), d->line, "duration",
+        kDurationUnits, 5, static_cast<unsigned long>(LONG_MAX)));
+}
+std::size_t getSize(const Statement& n, const std::string& k) {
+    const Statement* d = uniqueDirective(n, k);
+    if (!d) throw AccessError("key '" + k + "' missing");
+    return static_cast<std::size_t>(parseScaledRaw(k, scalarOf(*d, k), d->line, "size",
+        kSizeUnits, 3, static_cast<unsigned long>(std::numeric_limits<std::size_t>::max())));
+}
+std::size_t getSize(const Statement& n, const std::string& k, std::size_t def) {
+    const Statement* d = uniqueDirective(n, k);
+    if (!d) return def;
+    return static_cast<std::size_t>(parseScaledRaw(k, scalarOf(*d, k), d->line, "size",
+        kSizeUnits, 3, static_cast<unsigned long>(std::numeric_limits<std::size_t>::max())));
 }
 
 } // namespace cfg

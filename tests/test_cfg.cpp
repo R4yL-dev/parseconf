@@ -161,14 +161,17 @@ static void test_comments() {
         "# main config\n"
         "server {\n"
         "  port 6667;      # plaintext port\n"
-        "  // port 6697;   commented out\n"
-        "  url \"http://x#y//z\";\n"   // # and // inside a string are not comments
+        "  url \"http://x#y//z\";\n"   // # inside a string is not a comment
         "}\n";
     CHECK(tryParse(src, root));
     const cfg::Statement& s = cfg::getBlock(root, "server");
     CHECK_EQ(cfg::getInt(s, "port"), 6667);
     CHECK_EQ(cfg::getString(s, "url"), std::string("http://x#y//z"));
-    CHECK(!cfg::hasKey(s, "port6697"));
+    // '//' is no longer a comment: it is ordinary word content.
+    cfg::Statement r2;
+    CHECK(tryParse("s { url http://example.com/p; }", r2));
+    CHECK_EQ(cfg::getString(cfg::getBlock(r2, "s"), "url"),
+             std::string("http://example.com/p"));
 }
 
 static void test_deep_nesting_and_order() {
@@ -270,9 +273,8 @@ static void test_lexical_errors() {
     CHECK_THROWS(cfg::parseString("s { m \"a\tb\"; }"), cfg::ParseError);      // literal tab
     CHECK_THROWS(cfg::parseString("s { m \"l1\nl2\"; }"), cfg::ParseError);    // multiline string
     CHECK_THROWS(cfg::parseString("s { m \"hello; }"), cfg::ParseError);       // unterminated string
-    CHECK_THROWS(cfg::parseString("s { a - ; }"), cfg::ParseError);            // orphan dash
-    CHECK_THROWS(cfg::parseString("s { a / ; }"), cfg::ParseError);            // lone slash
-    CHECK_THROWS(cfg::parseString("s { a = 5; }"), cfg::ParseError);           // unexpected character
+    // A raw control byte inside a word is a lexical error (the ';' bounds it).
+    CHECK_THROWS(cfg::parseString("s { k \x01; }"), cfg::ParseError);
 }
 
 // --------------------------------------------------------------------------
@@ -284,11 +286,6 @@ static void test_syntax_errors() {
     CHECK_THROWS(cfg::parseString("{ port 6667; }"), cfg::ParseError);         // unnamed block
     CHECK_THROWS(cfg::parseString("server \"primary\" { }"), cfg::ParseError); // labeled block
     CHECK_THROWS(cfg::parseString("2port { }"), cfg::ParseError);              // invalid ident
-    CHECK_THROWS(cfg::parseString("s { a -.5; }"), cfg::ParseError);           // malformed number
-    CHECK_THROWS(cfg::parseString("s { b 1.; }"), cfg::ParseError);            // empty decimal part
-    CHECK_THROWS(cfg::parseString("s { c +5; }"), cfg::ParseError);            // positive sign
-    CHECK_THROWS(cfg::parseString("s { d 1.2.3; }"), cfg::ParseError);         // two dots
-    CHECK_THROWS(cfg::parseString("s { hostname irc.example.com; }"), cfg::ParseError); // unquoted
     CHECK_THROWS(cfg::parseString("s { port 6667\n host \"x\"; }"), cfg::ParseError);   // missing ;
     CHECK_THROWS(cfg::parseString("s { port; }"), cfg::ParseError);            // no value
     CHECK_THROWS(cfg::parseString("s { port 6667 6668; }"), cfg::ParseError);  // multiple values
@@ -302,11 +299,11 @@ static void test_syntax_errors() {
 
 static void test_parse_error_position() {
     try {
-        cfg::parseString("s {\n  a = 5;\n}");
+        cfg::parseString("s {\n  a 5 6;\n}");
         CHECK(false); // should have thrown
     } catch (const cfg::ParseError& e) {
         CHECK_EQ(e.line(), (std::size_t)2);
-        CHECK_EQ(e.column(), (std::size_t)5); // the '=' is at column 5
+        CHECK_EQ(e.column(), (std::size_t)7); // the unexpected second value '6'
     } catch (...) {
         CHECK(false);
     }
@@ -374,6 +371,121 @@ static void test_io_error() {
 }
 
 // --------------------------------------------------------------------------
+// Barewords (unquoted values)
+// --------------------------------------------------------------------------
+
+static void test_barewords_valid() {
+    cfg::Statement root;
+    CHECK(tryParse(
+        "s { ip 127.0.0.1; v6 ::1; path /etc/motd; ep host:6667;"
+        "    u http://example.com/p; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_EQ(cfg::getString(s, "ip"),   std::string("127.0.0.1"));
+    CHECK_EQ(cfg::getString(s, "v6"),   std::string("::1"));
+    CHECK_EQ(cfg::getString(s, "path"), std::string("/etc/motd"));
+    CHECK_EQ(cfg::getString(s, "ep"),   std::string("host:6667"));
+    CHECK_EQ(cfg::getString(s, "u"),    std::string("http://example.com/p"));
+
+    // a bareword and the same value quoted produce the same string
+    cfg::Statement r2;
+    CHECK(tryParse("s { hostname irc.example.com; }", r2));
+    CHECK_EQ(cfg::getString(cfg::getBlock(r2, "s"), "hostname"),
+             std::string("irc.example.com"));
+}
+
+static void test_hash_requires_quotes() {
+    cfg::Statement root;
+    // quoted: the '#' is part of the value
+    CHECK(tryParse("s { pass \"a#b\"; }", root));
+    CHECK_EQ(cfg::getString(cfg::getBlock(root, "s"), "pass"), std::string("a#b"));
+    // unquoted: the '#' starts a comment that swallows "b;" -> missing ';'
+    CHECK_THROWS(cfg::parseString("s { pass a#b; }"), cfg::ParseError);
+}
+
+static void test_barewords_raw_no_escapes() {
+    cfg::Statement root;
+    // backslashes are literal in a bareword (no escape processing)
+    CHECK(tryParse("s { p C:\\logs; q a\\nb; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_EQ(cfg::getString(s, "p"), std::string("C:\\logs"));
+    CHECK_EQ(cfg::getString(s, "q"), std::string("a\\nb")); // literal backslash-n
+}
+
+static void test_loose_numbers_as_barewords() {
+    cfg::Statement root;
+    // shapes that used to be parse errors now parse as raw words
+    CHECK(tryParse("s { a -.5; b 1.; c +5; d 1.2.3; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_THROWS(cfg::getInt(s, "a"), cfg::AccessError);   // "-.5"
+    CHECK_THROWS(cfg::getInt(s, "b"), cfg::AccessError);   // "1."
+    CHECK_EQ(cfg::getInt(s, "c"), 5);                      // "+5" is a valid int
+    CHECK_THROWS(cfg::getInt(s, "d"), cfg::AccessError);   // "1.2.3"
+}
+
+static void test_key_validation() {
+    CHECK_THROWS(cfg::parseString("2port { }"), cfg::ParseError);     // block name
+    CHECK_THROWS(cfg::parseString("s { 1k 2; }"), cfg::ParseError);   // directive key
+    cfg::Statement root;
+    CHECK(tryParse("s { port6667 1; }", root)); // a valid identifier key
+    CHECK(cfg::hasKey(cfg::getBlock(root, "s"), "port6667"));
+}
+
+// --------------------------------------------------------------------------
+// Typed quantities: getDuration / getSize
+// --------------------------------------------------------------------------
+
+static void test_duration() {
+    cfg::Statement root;
+    CHECK(tryParse("s { a 0s; b 500ms; c 1s; d 2m; e 1h; f 1d; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_EQ(cfg::getDuration(s, "a"), 0L);
+    CHECK_EQ(cfg::getDuration(s, "b"), 500L);
+    CHECK_EQ(cfg::getDuration(s, "c"), 1000L);
+    CHECK_EQ(cfg::getDuration(s, "d"), 120000L);
+    CHECK_EQ(cfg::getDuration(s, "e"), 3600000L);
+    CHECK_EQ(cfg::getDuration(s, "f"), 86400000L);
+}
+
+static void test_size() {
+    cfg::Statement root;
+    CHECK(tryParse("s { a 0K; b 1K; c 1M; d 2G; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_EQ(cfg::getSize(s, "a"), (std::size_t)0);
+    CHECK_EQ(cfg::getSize(s, "b"), (std::size_t)1024);
+    CHECK_EQ(cfg::getSize(s, "c"), (std::size_t)1048576);
+    CHECK_EQ(cfg::getSize(s, "d"), (std::size_t)2147483648UL);
+}
+
+static void test_quantity_defaults() {
+    cfg::Statement root;
+    CHECK(tryParse("s { t 30s; n 1M; bad 30; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    // absent -> default
+    CHECK_EQ(cfg::getDuration(s, "absent", 42L), 42L);
+    CHECK_EQ(cfg::getSize(s, "absent", (std::size_t)7), (std::size_t)7);
+    // present -> real value
+    CHECK_EQ(cfg::getDuration(s, "t", 0L), 30000L);
+    CHECK_EQ(cfg::getSize(s, "n", (std::size_t)0), (std::size_t)1048576);
+    // present but malformed: the default only covers ABSENCE
+    CHECK_THROWS(cfg::getDuration(s, "bad", 0L), cfg::AccessError);
+}
+
+static void test_quantity_errors() {
+    cfg::Statement root;
+    CHECK(tryParse(
+        "s { no 30; bu 30x; fr 1.5M; neg -30s; arr [1s,2s];"
+        "    od 99999999999999999999s; os 99999999999G; }", root));
+    const cfg::Statement& s = cfg::getBlock(root, "s");
+    CHECK_THROWS(cfg::getDuration(s, "no"),  cfg::AccessError); // no unit
+    CHECK_THROWS(cfg::getDuration(s, "bu"),  cfg::AccessError); // unknown unit
+    CHECK_THROWS(cfg::getSize(s, "fr"),      cfg::AccessError); // fractional
+    CHECK_THROWS(cfg::getDuration(s, "neg"), cfg::AccessError); // negative
+    CHECK_THROWS(cfg::getDuration(s, "arr"), cfg::AccessError); // array value
+    CHECK_THROWS(cfg::getDuration(s, "od"),  cfg::AccessError); // overflow
+    CHECK_THROWS(cfg::getSize(s, "os"),      cfg::AccessError); // overflow
+}
+
+// --------------------------------------------------------------------------
 
 int main() {
     test_minimal();
@@ -401,6 +513,15 @@ int main() {
     test_helpers_optional();
     test_has_helpers();
     test_io_error();
+    test_barewords_valid();
+    test_hash_requires_quotes();
+    test_barewords_raw_no_escapes();
+    test_loose_numbers_as_barewords();
+    test_key_validation();
+    test_duration();
+    test_size();
+    test_quantity_defaults();
+    test_quantity_errors();
 
     std::cout << (g_checks - g_fails) << "/" << g_checks << " checks passed\n";
     if (g_fails > 0) {

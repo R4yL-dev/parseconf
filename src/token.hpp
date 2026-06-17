@@ -10,8 +10,7 @@ namespace detail {
 // Lexical unit produced by the Lexer and consumed by the Parser.
 struct Token {
     enum Type {
-        IDENT,      // [a-zA-Z_][a-zA-Z0-9_-]*  (includes true/false)
-        NUMBER,     // [-]?[0-9]+([.][0-9]+)?   (raw lexeme)
+        WORD,       // unquoted run of non-delimiter bytes (raw lexeme, no escapes)
         STRING,     // "..."                    (text = DECODED value)
         LBRACE,     // {
         RBRACE,     // }
@@ -23,7 +22,7 @@ struct Token {
     };
 
     Type        type;
-    std::string text;    // lexeme (IDENT/NUMBER) or decoded value (STRING)
+    std::string text;    // raw lexeme (WORD) or decoded value (STRING)
     std::size_t line;    // 1-based, first byte of the token
     std::size_t column;  // 1-based in bytes, first byte of the token
 

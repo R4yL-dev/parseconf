@@ -8,8 +8,9 @@
 namespace cfg {
 
 // Value of a directive: either a scalar or an array of scalars.
-// All values are stored as std::string (see spec 5.5): the NUMBER / STRING /
-// BOOL distinction is not preserved in the tree.
+// All values are stored as std::string: barewords keep their raw lexeme, quoted
+// strings are stored decoded. No type information is preserved in the tree;
+// interpretation happens in the helpers.
 struct Value {
     enum Type { SCALAR, ARRAY };
 

@@ -38,6 +38,18 @@ double      getFloat (const Statement& node, const std::string& key, double def)
 bool        getBool  (const Statement& node, const std::string& key, bool def);
 
 
+// ---- Typed quantities (REQUIRED / OPTIONAL) ----
+// Duration: "<int><unit>", unit in {ms,s,m,h,d}, returned in milliseconds.
+// Size:     "<int><unit>", unit in {K,M,G} (binary, 1024), returned in bytes.
+// The unit suffix is mandatory; negative/fractional/combined are rejected.
+// REQUIRED throws AccessError if the key is absent; both variants throw on a
+// malformed value. The OPTIONAL variant returns `def` only when the key is absent.
+long        getDuration(const Statement& node, const std::string& key);
+long        getDuration(const Statement& node, const std::string& key, long def);
+std::size_t getSize    (const Statement& node, const std::string& key);
+std::size_t getSize    (const Statement& node, const std::string& key, std::size_t def);
+
+
 // ---- Multiple values ----
 
 // Collects every value associated with `key`, in file order (scalars + flattened

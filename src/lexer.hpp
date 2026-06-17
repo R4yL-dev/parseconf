@@ -33,8 +33,7 @@ private:
 
     void   skipTrivia();          // whitespace + comments
 
-    Token  lexIdent();
-    Token  lexNumber();
+    Token  lexWord();
     Token  lexString();
 
     // Build and throw a ParseError at the current (or given) position.

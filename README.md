@@ -28,44 +28,59 @@ body contains **directives** (`key value;`) and/or nested blocks, in any order.
 ```
 server {
     port     6667;
-    hostname "irc.example.com";
+    hostname irc.example.com;        # bareword: no quotes needed
+    motd     /etc/motd;
+
+    ping_timeout   30s;              # duration helper -> 30000 ms
+    max_send_queue 1M;              # size helper     -> 1048576 bytes
 
     tls {
         enabled true;
-        cert    "/etc/ssl/server.crt";
+        cert    /etc/ssl/server.crt;
     }
 
     ports     [6667, 6668, 6697];   # array
     motd-lines [
         "line 1",
-        "line 2",                    # trailing comma allowed
+        "line 2",                    # quotes embed the space; trailing comma ok
     ];
 }
 
-oper { name "admin";     pass "s1"; }
-oper { name "moderator"; pass "s2"; }   # duplicate block names are kept
+oper { name admin;     pass "s1#secret"; }   # quote to embed the '#'
+oper { name moderator; pass "s2"; }          # duplicate block names are kept
 ```
 
 Rules that matter:
 
 - The file root contains **only blocks**. A directive at the root is a syntax
   error.
-- A directive is `IDENT value ;` — exactly one value (a scalar or an array),
+- A directive is `key value ;` — exactly one value (a scalar or an array),
   always terminated by `;`.
-- Scalars: numbers (`6667`, `-1`, `0.75`), double-quoted strings (`"..."`),
-  and the booleans `true` / `false`.
-- Unquoted text that is neither a number nor `true`/`false` is an error:
-  `hostname irc.example.com;` is invalid, write `hostname "irc.example.com";`.
-- Arrays hold scalars only: `[1, 2, 3]`, `["a", "b"]`, `[]`. No nested arrays.
+- **Values are bare by default; quotes are optional.** A bare value and the same
+  value quoted produce the **same** string: `ip 127.0.0.1;` equals
+  `ip "127.0.0.1";`. Quotes are only an escape hatch — use them to embed spaces,
+  delimiters, a `#`, or to write the empty string `""`.
+- A bareword is any run of bytes up to the next delimiter
+  (whitespace or one of `{ } [ ] ; , " #`). It is stored **raw**: no escape
+  processing. `path C:\logs;` keeps the literal backslash; `q a\nb;` is the four
+  characters `a \ n b`, not a newline. Escapes work **only inside quotes**.
+- The parser checks **structure, not number syntax**. `1.`, `+5`, `1.2.3`,
+  `-.5` all parse as plain barewords; they fail later only if you call
+  `getInt`/`getFloat` on them.
+- Arrays hold scalars only: `[1, 2, 3]`, `[a, b]`, `[]`. No nested arrays.
 - Blocks take no label: `server "primary" { }` is invalid.
-- Comments: `#` and `//`, both to end of line. No `/* */`.
-- Strings are single-line. Escapes: `\"`, `\\`, `\n`, `\t` (and only those).
-- Identifiers: `[a-zA-Z_][a-zA-Z0-9_-]*`. Case-sensitive. No `.`.
-- Whitespace is insignificant except to separate tokens. Encoding is UTF-8;
-  non-ASCII bytes pass through unchanged inside strings. A leading UTF-8 BOM is
-  ignored.
+- Comments: `#` only, to end of line. No `//` (it would collide with `http://…`)
+  and no `/* */`.
+- Strings use `"..."` only (no `'...'`). Single-line. Escapes: `\"`, `\\`, `\n`,
+  `\t` (and only those).
+- **Keys and block names** must keep identifier shape `[a-zA-Z_][a-zA-Z0-9_-]*`
+  (case-sensitive). This is the one place the parser constrains a word; values
+  are unrestricted.
+- Whitespace (newlines included) is insignificant except to separate tokens.
+  Encoding is UTF-8; non-ASCII bytes pass through unchanged. A leading UTF-8 BOM
+  is ignored.
 
-See `config-lang.md` for the complete, normative specification.
+This README is the normative specification of the language.
 
 ## Building
 
@@ -131,10 +146,11 @@ struct Statement {
 The root has `kind == BLOCK`, `name == ""`, `line == 0`, and `children` holding
 the top-level blocks in order.
 
-All values are stored as `std::string`. The number/string/bool distinction is
-**not** kept in the tree: `port 6667;` and `port "6667";` both store `"6667"`.
-Strings are stored **decoded** (no quotes, escapes resolved); numbers are stored
-as their raw lexeme (`007` stays `"007"`). Conversion happens in the helpers.
+All values are stored as `std::string`. The parser keeps no type information:
+`port 6667;` and `port "6667";` both store `"6667"`. Barewords are stored as
+their **raw lexeme** (`007` stays `"007"`, `C:\logs` keeps its backslash);
+quoted strings are stored **decoded** (quotes removed, escapes resolved). All
+interpretation — integer, float, bool, duration, size — happens in the helpers.
 
 ## Parsing API
 
@@ -170,12 +186,19 @@ int         getInt   (const Statement&, const std::string& key, int def);
 double      getFloat (const Statement&, const std::string& key, double def);
 bool        getBool  (const Statement&, const std::string& key, bool def);
 
+// Typed quantities (required + optional). Unit suffix is mandatory.
+long        getDuration(const Statement&, const std::string& key);              // milliseconds
+long        getDuration(const Statement&, const std::string& key, long def);
+std::size_t getSize    (const Statement&, const std::string& key);             // bytes
+std::size_t getSize    (const Statement&, const std::string& key, std::size_t def);
+
 // Multiple values
 std::vector<std::string> getStrings(const Statement&, const std::string& key); // never throws
 bool                     hasKey    (const Statement&, const std::string& key);
 ```
 
-Conversion rules:
+Conversion rules. The parser does **not** validate number syntax; these helpers
+do, and they throw `AccessError` on a value they cannot convert:
 
 - `getInt`: base-10 integer, leading `-`/`+` allowed, whole string consumed,
   overflow of `int` throws.
@@ -183,6 +206,22 @@ Conversion rules:
 - `getBool`: exactly `"true"`/`"1"` → `true`, `"false"`/`"0"` → `false`,
   anything else throws. (Covers `enabled true;`, `enabled "true";`, `enabled 1;`.)
 - `getString`: the scalar as-is.
+- `getDuration` / `getSize`: `<unsigned int><unit>`. The unit suffix is
+  **mandatory**; a sign, a fraction, combined units, or an unknown suffix throw;
+  overflow throws (never a silent wrap). Tables below.
+
+| `getDuration` | `ms` | `s` | `m` | `h` | `d` |
+|---|---|---|---|---|---|
+| milliseconds | 1 | 1000 | 60 000 | 3 600 000 | 86 400 000 |
+
+`ping_timeout 30s;` → `30000`. Base unit: millisecond.
+
+| `getSize` | `K` | `M` | `G` |
+|---|---|---|---|
+| bytes (binary, 1024) | 1024 | 1 048 576 | 1 073 741 824 |
+
+`max_send_queue 1M;` → `1048576`. Base unit: byte. Units are **case-sensitive**,
+so `m` (minute) and `M` (mebibyte) never collide — the helper you call decides.
 
 `getStrings` flattens: for each directive named `key`, a scalar value adds one
 element and an array value adds all its elements, in file order. As a result
